@@ -30,51 +30,7 @@ credentials = [
     {"phone": "09497941608", "code": "964"},
     {"phone": "09344474585", "code": "922"},
     {"phone": "09465307245", "code": "715"},
-    {"phone": "09137520214", "code": "872"},
-    {"phone": "09170363921", "code": "521"},
-    {"phone": "09258785549", "code": "835"},
-    {"phone": "09554072913", "code": "602"},
-    {"phone": "09220359954", "code": "609"},
-    {"phone": "09489110740", "code": "638"},
-    {"phone": "09194589054", "code": "254"},
-    {"phone": "09137666532", "code": "993"},
-    {"phone": "09248750308", "code": "298"},
-    {"phone": "09506615700", "code": "399"},
-    {"phone": "09362605643", "code": "794"},
-    {"phone": "09494997709", "code": "700"},
-    {"phone": "09546494096", "code": "767"},
-    {"phone": "09154011245", "code": "395"},
-    {"phone": "09200451732", "code": "729"},
-    {"phone": "09470493591", "code": "820"},
-    {"phone": "09267209118", "code": "825"},
-    {"phone": "09363840678", "code": "877"},
-    {"phone": "09523781152", "code": "395"},
-    {"phone": "09457865133", "code": "855"},
-    {"phone": "09217197100", "code": "443"},
-    {"phone": "09103198637", "code": "473"},
-    {"phone": "09276897178", "code": "408"},
-    {"phone": "09475319134", "code": "376"},
-    {"phone": "09404418585", "code": "162"},
-    {"phone": "09325562525", "code": "258"},
-    {"phone": "09208981743", "code": "344"},
-    {"phone": "09507874412", "code": "726"},
-    {"phone": "09341058232", "code": "868"},
-    {"phone": "09381108034", "code": "801"},
-    {"phone": "09498165386", "code": "654"},
-    {"phone": "09311290235", "code": "297"},
-    {"phone": "09175596662", "code": "638"},
-    {"phone": "09270872633", "code": "411"},
-    {"phone": "09278534509", "code": "791"},
-    {"phone": "09568868916", "code": "965"},
-    {"phone": "09456985513", "code": "644"},
-    {"phone": "09343432491", "code": "293"},
-    {"phone": "09517723306", "code": "504"},
-    {"phone": "09176891014", "code": "501"},
-    {"phone": "09202974667", "code": "336"},
-    {"phone": "09177568570", "code": "242"},
-    {"phone": "09198389703", "code": "673"},
-    {"phone": "09210478623", "code": "354"},
-    {"phone": "09497128182", "code": "351"},
+    # Add more if needed
 ]
 
 # ─── Session Setup ──────────────────────────────────────────────────────────────
@@ -93,7 +49,6 @@ def setup_session():
 # ─── Core Functions ──────────────────────────────────────────────────────────────
 
 def login(session, phone, code):
-    # compute MD5 hash of the raw password string
     raw = f"password{code}"
     pw_hash = hashlib.md5(raw.encode()).hexdigest()
     payload = {"phone": phone, "password": pw_hash}
@@ -103,14 +58,13 @@ def login(session, phone, code):
         raise RuntimeError(f"Login failed: {data.get('message') or resp.text}")
     token = data["result"]["token"]
     head = data["result"]["tokenHead"]
-    auth = f"{head} {token}"  
+    auth = f"{head} {token}"
     session.headers.update({
         "Authorization": auth,
-        "memberInfoId": data["result"]["sysUserId"],
+        "memberInfoId": str(data["result"]["sysUserId"]),
         "salesPersonId": SALES_PERSON_ID
     })
-    print(f"✔ Logged in: {phone}")
-
+    print(f"[{phone}] ✔ Logged in")
 
 def fetch_page(session, page_no):
     resp = session.post(PAGE_URL, json={"pageNo": page_no, "pageSize": PAGE_SIZE, "categoryId": CATEGORY_ID})
@@ -119,7 +73,6 @@ def fetch_page(session, page_no):
         raise RuntimeError("Failed to fetch page")
     return js["result"]["list"]
 
-
 def fetch_content_id(session, works_info_id):
     resp = session.post(CONTENT_URL, json={"id": works_info_id})
     js = resp.json()
@@ -127,59 +80,71 @@ def fetch_content_id(session, works_info_id):
         return None
     return js["result"][0]["id"]
 
-
-def process_item(session, info_id):
+def process_item(session, info_id, phone):
     content_id = fetch_content_id(session, info_id)
     if not content_id:
-        print(f"⚠️ No content for {info_id}")
+        print(f"[{phone}] ⚠️ No content for article {info_id}")
         return False
-    session.post(START_READ_URL, json={"worksInfoContentId": content_id, "worksInfoId": info_id})
-    print(f"📖 Reading {info_id}...")
+    resp = session.post(START_READ_URL, json={"worksInfoContentId": content_id, "worksInfoId": info_id})
+    js = resp.json()
+    if js.get("success") is False and js.get("businessMessage") == "AlreadyRead":
+        print(f"[{phone}] ⏭️ Article {info_id} already read, skipping")
+        return False
+    print(f"[{phone}] 📖 Reading article {info_id}...")
     time.sleep(DELAY_SECONDS)
-    res = session.post(CLAIM_URL, json={"worksInfoContentId": content_id}).json()
-    if res.get("success"):
-        print(f"🎉 Claimed {content_id}")
+    claim_resp = session.post(CLAIM_URL, json={"worksInfoContentId": content_id}).json()
+    if claim_resp.get("success"):
+        print(f"[{phone}] 🎉 Claimed article {info_id}")
         return True
     else:
-        print(f"❌ Claim failed {content_id}")
+        print(f"[{phone}] ❌ Claim failed for article {info_id}")
         return False
 
-
-def claim_daily_rewards(session):
-    resp = session.post(DAILY_INFO_URL, json={}).json()
-    if not resp.get("success"):
-        print("❌ Daily info failed")
+def claim_daily_rewards(session, phone):
+    resp = session.post(DAILY_INFO_URL, json={})
+    data = resp.json()
+    if not data.get("success") or "result" not in data:
+        print(f"[{phone}] ⚠️ Could not retrieve daily reading rewards info")
         return
-    for tier in resp["result"]["memberReadingRewardDetailVoList"]:
-        if tier.get("memberReadingRewardStatus") == "complete":
-            num = tier.get("workInfoReadingNum")
-            res = session.post(DAILY_AWARD_URL, json={"workInfoReadingNum": num}).json()
-            print(f"🎁 Daily bonus {num} claimed" if res.get("success") else f"⚠️ Daily {num} failed")
-
+    tiers = data["result"].get("memberReadingRewardDetailVoList", [])
+    print(f"[{phone}] 🔄 Checking daily reward tiers...")
+    for tier in tiers:
+        status = tier.get("memberReadingRewardStatus")
+        num = tier.get("workInfoReadingNum")
+        if status == "complete":
+            print(f"[{phone}] Claiming daily tier reward for reading {num} articles...")
+            claim_resp = session.post(DAILY_AWARD_URL, json={"workInfoReadingNum": num}).json()
+            if claim_resp.get("success"):
+                print(f"[{phone}] 🎁 Successfully claimed tier reward for {num} articles")
+            else:
+                print(f"[{phone}] ⚠️ Failed to claim tier reward for {num} articles")
+        else:
+            print(f"[{phone}] Tier reward for {num} articles not completed yet")
 
 def run_for_user(cred):
+    phone = cred["phone"]
+    code = cred["code"]
     session = setup_session()
     try:
-        login(session, cred["phone"], cred["code"])
+        login(session, phone, code)
         reads = 0
-        for page in range(1, MAX_PAGES+1):
+        for page in range(1, MAX_PAGES + 1):
             items = fetch_page(session, page)
             for itm in items:
                 if reads >= MAX_READS:
                     break
-                if process_item(session, itm["id"]): reads += 1
+                if process_item(session, itm["id"], phone):
+                    reads += 1
             if reads >= MAX_READS:
                 break
-        print("🔄 Claiming daily rewards...")
-        claim_daily_rewards(session)
-        print(f"✅ Done for {cred['phone']} ({reads} reads)\n")
+        claim_daily_rewards(session, phone)
+        print(f"[{phone}] ✅ Done. Articles read: {reads}\n")
     except Exception as e:
-        print(f"🚨 {cred['phone']} error: {e}\n")
-
+        print(f"[{phone}] 🚨 Error: {e}\n")
 
 if __name__ == "__main__":
-    print("🌟 Starting Bounty News Auto Claimer...")
+    print("🌟 Starting Bounty News Auto Claimer...\n")
     for c in credentials:
-        print(f"\n▶️ {c['phone']}")
+        print(f"▶️ Processing {c['phone']}")
         run_for_user(c)
-    print("\n🏁 All tasks completed")
+    print("🏁 All tasks completed.")
