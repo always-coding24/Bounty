@@ -25,11 +25,13 @@ CATEGORY_ID   = "1921117247997878274"
 PAGE_SIZE     = 10
 MAX_PAGES     = 30
 DELAY_SECONDS = 32
-MAX_READS     = 20
+MAX_READS     = 50
+
+
 
 # Retry configuration
 MAX_RETRIES = 5
-RETRY_DELAY_BASE = 2  # Base delay in seconds
+RETRY_DELAY_BASE = 5  # Base delay in seconds
 RETRY_DELAY_MAX = 30  # Maximum delay in seconds
 
 # ─── Credentials (phone + code) ────────────────────────────────────────────────
